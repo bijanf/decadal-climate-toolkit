@@ -8,7 +8,7 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 PROJECT_ROOT="$( dirname "$SCRIPT_DIR" )"
 
 # Set default paths
-DATA_DIR="${DATA_DIR:-/path/to/data}"
+DATA_DIR="${DATA_DIR:-/work/bk1318/k202208/diff-pred/data/mpi-esm/hindcast/seasonal-daily-18m/monthly/anomaly}"
 OUTPUT_DIR="${OUTPUT_DIR:-$PROJECT_ROOT/output}"
 
 # Create output directory

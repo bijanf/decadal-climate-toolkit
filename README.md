@@ -1,5 +1,9 @@
 # DecadalClimate
 
+[![Build Status](https://github.com/username/decadal/actions/workflows/build.yml/badge.svg)](https://github.com/username/decadal/actions/workflows/build.yml)
+[![Lint Status](https://github.com/username/decadal/actions/workflows/lint.yml/badge.svg)](https://github.com/username/decadal/actions/workflows/lint.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 A comprehensive toolkit for processing and analyzing decadal climate prediction data with a focus on NetCDF file manipulation and visualization.
 
 ## Overview
@@ -55,6 +59,8 @@ decadal/
 ### Process a Single Ensemble Member
 
 ```bash
+export DATA_DIR="/work/bk1318/k202208/diff-pred/data/mpi-esm/hindcast/seasonal-daily-18m/monthly/anomaly"
+export OUTPUT_DIR="."
 ./scripts/process_ensemble.sh r10i11p2f1
 ```
 
@@ -62,12 +68,6 @@ decadal/
 
 ```bash
 ./scripts/process_all_ensembles.sh
-```
-
-### Memory-Efficient File Processing
-
-```bash
-python src/fill_netcdf_direct.py --input_dir input/ --output_file output/combined.nc --ensemble r10i11p2f1
 ```
 
 ## Visualization
@@ -152,17 +152,14 @@ Run tests:
 pytest
 ```
 
+## Code Quality
+
+This project uses several tools to ensure code quality
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## Citation
-
-If you use this software in your research, please cite:
-
-```
-Author, A. (2023). DecadalClimate: A toolkit for processing decadal prediction data. Journal of Open Source Software, X(X), XXXX. https://doi.org/XXX/XXX
-```
 
 ## Contributing
 
