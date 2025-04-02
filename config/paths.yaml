@@ -1,0 +1,26 @@
+# Configuration file for paths used in decadal climate processing
+
+# Input data directories
+input:
+  # Main directory containing raw NetCDF files
+  data_dir: "/path/to/data"
+  # Pattern for finding files (can use glob patterns)
+  file_pattern: "tas_*_anomaly.nc"
+
+# Output directories
+output:
+  # Main output directory for processed files
+  main_dir: "output"
+  # Directory for temporary files during processing
+  temp_dir: "output/temp"
+  # Directory for individual processed yearly files
+  individual_dir: "output/individual"
+  # Directory for final combined files
+  combined_dir: "output/combined"
+
+# Logging configuration
+logs:
+  # Directory for log files
+  log_dir: "logs"
+  # Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+  log_level: "INFO"

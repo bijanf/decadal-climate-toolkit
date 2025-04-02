@@ -1,0 +1,32 @@
+# Configuration file for decadal climate data processing parameters
+
+# General processing parameters
+general:
+  # Maximum number of parallel processes
+  max_processes: 4
+  # Whether to overwrite existing files
+  overwrite: false
+  # Default ensemble member if not specified
+  default_ensemble: "r10i11p2f1"
+
+# NetCDF file parameters
+netcdf:
+  # Maximum number of lead time steps to include
+  max_lead_time: 18
+  # Compression level for output files (1-9, higher is more compression)
+  compression_level: 4
+  # Whether to use chunking for better performance
+  use_chunking: true
+  # Chunk sizes for each dimension
+  chunks:
+    initialization: 1
+    lead_time: 18
+    lat: 73
+    lon: 144
+
+# Time parameters
+time:
+  # Base month for initialization (1=Jan, 12=Dec)
+  init_month: 11
+  # Base day for initialization
+  init_day: 1
