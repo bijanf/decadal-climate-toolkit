@@ -93,3 +93,6 @@ output/*
 *.nc
 logs/
 temp/
+figures/
+data/
+*.png
