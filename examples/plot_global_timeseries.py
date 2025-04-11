@@ -19,6 +19,7 @@ import numpy as np
 import xarray as xr
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
+import pandas as pd
 
 # Set up logging
 logging.basicConfig(
@@ -54,40 +55,33 @@ def compute_global_average(
     ds: xr.Dataset, variable: str = "tas", lat_name: str = "lat", lon_name: str = "lon"
 ) -> xr.DataArray:
     """
-    Compute globally averaged value, weighted by grid cell area (cosine of latitude).
+    Compute globally averaged values weighted by grid cell area (cosine of latitude).
 
     Parameters
     ----------
     ds : xr.Dataset
-        Dataset containing the variable to average
+        Input dataset
     variable : str, optional
-        Name of the variable to average, by default 'tas'
+        Variable name, by default "tas"
     lat_name : str, optional
-        Name of the latitude dimension, by default 'lat'
+        Name of latitude dimension, by default "lat"
     lon_name : str, optional
-        Name of the longitude dimension, by default 'lon'
+        Name of longitude dimension, by default "lon"
 
     Returns
     -------
     xr.DataArray
-        Globally averaged time series
+        Globally averaged data
     """
     logger.info(f"Computing global average for {variable}")
-
-    # Get variable
-    if variable not in ds:
-        raise ValueError(f"Variable {variable} not found in dataset")
-    da = ds[variable]
 
     # Create weights based on cosine of latitude
     weights = np.cos(np.deg2rad(ds[lat_name]))
     weights = weights / weights.sum()
 
-    # Apply weights to latitude dimension
-    weighted = da.weighted(weights)
-
-    # Average over lat/lon dimensions
-    global_avg = weighted.mean(dim=(lat_name, lon_name))
+    # Apply weights and compute global average
+    weighted = ds[variable] * weights
+    global_avg = weighted.mean(dim=[lat_name, lon_name])
 
     return global_avg
 
@@ -122,6 +116,46 @@ def create_time_axis(init_years: List[int], lead_times: List[int]) -> Dict[int, 
     return time_axis
 
 
+def compute_yearly_mean(global_avg: xr.DataArray) -> Tuple[List[datetime], List[float]]:
+    """
+    Compute yearly mean values from monthly data.
+
+    Parameters
+    ----------
+    global_avg : xr.DataArray
+        Globally averaged monthly data
+
+    Returns
+    -------
+    Tuple[List[datetime], List[float]]
+        List of yearly dates and corresponding mean values
+    """
+    # Get time values and convert to datetime
+    time_values = global_avg.time.values
+    if isinstance(time_values[0], np.datetime64):
+        dates = [pd.to_datetime(t) for t in time_values]
+    else:
+        time_units = global_avg.time.attrs.get('units', 'days since 1958-01-01')
+        dates = [datetime(1958, 1, 1) + timedelta(days=int(t)) for t in time_values]
+
+    # Group by year and compute mean
+    yearly_data = {}
+    for date, value in zip(dates, global_avg.values):
+        year = date.year
+        if year not in yearly_data:
+            yearly_data[year] = []
+        yearly_data[year].append(value)
+
+    # Compute yearly means
+    yearly_dates = []
+    yearly_means = []
+    for year in sorted(yearly_data.keys()):
+        yearly_dates.append(datetime(year, 7, 1))  # Use July 1st as representative date
+        yearly_means.append(np.mean(yearly_data[year]))
+
+    return yearly_dates, yearly_means
+
+
 def plot_timeseries(
     global_avg: xr.DataArray,
     output_file: Optional[str] = None,
@@ -129,7 +163,7 @@ def plot_timeseries(
     title: Optional[str] = None,
 ) -> Tuple[Figure, Axes]:
     """
-    Plot time series of globally averaged data.
+    Plot time series of temperature anomalies for each initialization.
 
     Parameters
     ----------
@@ -138,7 +172,7 @@ def plot_timeseries(
     output_file : str, optional
         Path to save the figure, by default None
     ensemble_label : str, optional
-        Label for ensemble, by default None
+        Label for the ensemble, by default None
     title : str, optional
         Title for the plot, by default None
 
@@ -147,48 +181,48 @@ def plot_timeseries(
     Tuple[Figure, Axes]
         Figure and axes objects
     """
+    logger.info("Creating time series plot...")
+
     # Create figure
     fig, ax = plt.subplots(figsize=(12, 6))
 
-    # Get initialization years
-    init_years = global_avg.initialization.values
-    lead_times = global_avg.lead_time.values
+    # Get initialization dates
+    init_dates = pd.to_datetime(global_avg.time.values)
+    
+    # For each initialization date, plot the forecast
+    for init_date in init_dates:
+        # Get the forecast for this initialization
+        forecast = global_avg.sel(time=init_date)
+        
+        # Create forecast dates (42 months from initialization)
+        forecast_dates = [init_date + pd.DateOffset(months=i) for i in range(len(forecast))]
+        
+        # Plot the forecast as a single gray line
+        ax.plot(forecast_dates, forecast.values,
+                color='gray',
+                linewidth=1.5,
+                alpha=0.5)
 
-    # Create time axis for each initialization year
-    time_axis = create_time_axis(init_years, lead_times)
-
-    # Set default title if not provided
-    if title is None:
-        title = "Global Mean Temperature Anomalies"
-        if ensemble_label:
-            title += f" - {ensemble_label}"
-
-    # Plot each initialization year
-    for i, year in enumerate(init_years):
-        times = time_axis[year]
-        values = global_avg.sel(initialization=year).values
-
-        # Plot with different color for each initialization year
-        label = f"Init: {year}"
-        ax.plot(times, values, marker="o", ms=4, label=label)
-
-    # Add legend, grid, and labels
-    ax.legend(loc="best", frameon=True, fontsize=10)
-    ax.grid(True, alpha=0.3)
-    ax.set_title(title, fontsize=14)
+    # Format plot
+    if title:
+        ax.set_title(title, fontsize=14)
+    else:
+        ax.set_title("Temperature Anomalies by Initialization", fontsize=14)
     ax.set_xlabel("Date", fontsize=12)
     ax.set_ylabel("Temperature Anomaly (K)", fontsize=12)
+    ax.grid(True, alpha=0.3)
 
     # Format x-axis as dates
     ax.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
-    ax.xaxis.set_major_locator(mdates.YearLocator())
+    ax.xaxis.set_major_locator(mdates.MonthLocator(interval=6))
     plt.xticks(rotation=45)
 
     # Adjust layout
     plt.tight_layout()
 
-    # Save if output file is provided
+    # Save figure if output file is specified
     if output_file:
+        os.makedirs(os.path.dirname(output_file), exist_ok=True)
         plt.savefig(output_file, dpi=300, bbox_inches="tight")
         logger.info(f"Figure saved to {output_file}")
 
@@ -221,12 +255,6 @@ def plot_multi_ensemble(
     if output_dir is not None:
         os.makedirs(output_dir, exist_ok=True)
 
-    # Figure for combined plot
-    fig_combined, ax_combined = plt.subplots(figsize=(14, 8))
-
-    # Colors for different ensembles
-    colors = plt.cm.tab20.colors
-
     # Process each ensemble
     for i, ensemble in enumerate(ensemble_ids):
         # Load data
@@ -237,6 +265,9 @@ def plot_multi_ensemble(
 
         try:
             ds = load_ensemble_data(filepath)
+            logger.info(f"\nProcessing ensemble {ensemble}")
+            logger.info(f"Dataset dimensions: {ds.dims}")
+            logger.info(f"Time coordinate info: {ds.time}")
 
             # Compute global average
             global_avg = compute_global_average(ds, variable=variable)
@@ -248,50 +279,68 @@ def plot_multi_ensemble(
                     global_avg,
                     output_file=output_file,
                     ensemble_label=ensemble,
-                    title=f"Global Mean Temperature Anomalies - {ensemble}",
-                )
-
-            # Add to combined plot
-            init_years = global_avg.initialization.values
-            lead_times = global_avg.lead_time.values
-            time_axis = create_time_axis(init_years, lead_times)
-
-            # Use the same color for all initialization years of this ensemble
-            ensemble_color = colors[i % len(colors)]
-
-            for j, year in enumerate(init_years):
-                times = time_axis[year]
-                values = global_avg.sel(initialization=year).values
-
-                marker_style = ["o", "s", "^", "d", "x"][j % 5]  # Cycle through marker styles
-                label = f"{ensemble} - Init: {year}"
-                ax_combined.plot(
-                    times,
-                    values,
-                    marker=marker_style,
-                    ms=4,
-                    label=label,
-                    color=ensemble_color,
-                    alpha=0.8,
+                    title=f"Temperature Anomalies - {ensemble}",
                 )
 
         except Exception as e:
             logger.error(f"Error processing {ensemble}: {e}")
+
+    # Create a combined plot for all ensembles
+    fig_combined, ax_combined = plt.subplots(figsize=(14, 8))
+    
+    # Process each ensemble again for the combined plot
+    for i, ensemble in enumerate(ensemble_ids):
+        filepath = os.path.join(data_dir, file_pattern.format(ensemble))
+        if not os.path.exists(filepath):
             continue
 
-    # Finalize combined plot
-    ax_combined.legend(loc="best", frameon=True, fontsize=9, ncol=2)
-    ax_combined.grid(True, alpha=0.3)
-    ax_combined.set_title("Global Mean Temperature Anomalies - All Ensembles", fontsize=14)
+        try:
+            ds = load_ensemble_data(filepath)
+            global_avg = compute_global_average(ds, variable=variable)
+            
+            # Get time values and convert to datetime
+            time_values = global_avg.time.values
+            if isinstance(time_values[0], np.datetime64):
+                dates = [pd.to_datetime(t) for t in time_values]
+            else:
+                time_units = global_avg.time.attrs.get('units', 'days since 1958-01-01')
+                dates = [datetime(1958, 1, 1) + timedelta(days=int(t)) for t in time_values]
+
+            # Find all unique initialization dates (November dates)
+            init_indices = []
+            current_year = None
+            for i, date in enumerate(dates):
+                if date.month == 11:
+                    if current_year != date.year:  # Only take first November of each year
+                        init_indices.append(i)
+                        current_year = date.year
+
+            # Plot each initialization's forecast
+            for init_idx in init_indices:
+                if init_idx + 42 > len(dates):
+                    continue
+                    
+                # Get the next 42 months of data
+                forecast_dates = dates[init_idx:init_idx+42]
+                forecast_values = global_avg.values[init_idx:init_idx+42]
+                
+                # Plot the forecast as a single gray line
+                ax_combined.plot(forecast_dates, forecast_values,
+                               color='gray',
+                               linewidth=1.5,
+                               alpha=0.5)
+
+        except Exception as e:
+            logger.error(f"Error processing {ensemble} for combined plot: {e}")
+
+    # Format combined plot
+    ax_combined.set_title("Temperature Anomalies by Initialization", fontsize=14)
     ax_combined.set_xlabel("Date", fontsize=12)
     ax_combined.set_ylabel("Temperature Anomaly (K)", fontsize=12)
-
-    # Format x-axis as dates
+    ax_combined.grid(True, alpha=0.3)
     ax_combined.xaxis.set_major_formatter(mdates.DateFormatter("%Y-%m"))
-    ax_combined.xaxis.set_major_locator(mdates.YearLocator())
+    ax_combined.xaxis.set_major_locator(mdates.MonthLocator(interval=6))
     plt.xticks(rotation=45)
-
-    # Adjust layout
     plt.tight_layout()
 
     # Save combined plot

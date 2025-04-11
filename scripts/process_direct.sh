@@ -1,5 +1,6 @@
 #!/bin/bash
-# Process a single ensemble member and combine yearly files
+# Process a single ensemble member directly using our local Python script
+# This bypasses the module system issues
 
 # Check command-line arguments
 if [ $# -lt 1 ]; then
@@ -71,12 +72,12 @@ else
     echo "Using system Python instead"
 fi
 
-# Set PYTHONPATH to include the project directory
-export PYTHONPATH="$PROJECT_ROOT:$PYTHONPATH"
+# Make the script executable
+chmod +x $SCRIPT_DIR/process_direct.py
 
-# Run the command
-echo "Running: python -m decadalclimate.cli.combine --input_dir=$HINDCAST_DIR --output_file=$OUTPUT_FILE --ensemble=$ENSEMBLE_ID --overwrite"
-python -m decadalclimate.cli.combine --input_dir=$HINDCAST_DIR --output_file=$OUTPUT_FILE --ensemble=$ENSEMBLE_ID --overwrite
+# Run the direct Python script
+echo "Running: python $SCRIPT_DIR/process_direct.py --input_dir=$HINDCAST_DIR --output_file=$OUTPUT_FILE --ensemble=$ENSEMBLE_ID --assim_dir=$ASSIM_DIR --overwrite"
+python $SCRIPT_DIR/process_direct.py --input_dir=$HINDCAST_DIR --output_file=$OUTPUT_FILE --ensemble=$ENSEMBLE_ID --assim_dir=$ASSIM_DIR --overwrite
 
 # Check if the command was successful
 if [ $? -ne 0 ]; then
@@ -85,4 +86,4 @@ if [ $? -ne 0 ]; then
 fi
 
 echo "Successfully processed ensemble member ${ENSEMBLE_ID}"
-echo "Output file: ${OUTPUT_FILE}"
+echo "Output file: ${OUTPUT_FILE}" 

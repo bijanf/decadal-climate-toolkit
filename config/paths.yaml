@@ -6,6 +6,8 @@ input:
   data_dir: "/path/to/data"
   # Pattern for finding files (can use glob patterns)
   file_pattern: "tas_*_anomaly.nc"
+  # Directory containing assimilation member files
+  assim_dir: "/work/bk1318/k202208/diff-pred/data/mpi-esm/assim/remapped/anomaly"
 
 # Output directories
 output:

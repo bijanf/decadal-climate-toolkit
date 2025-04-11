@@ -6,6 +6,7 @@ import glob
 import os
 import time
 from typing import List, Tuple
+from datetime import datetime
 
 import netCDF4 as nc
 import numpy as np
@@ -27,13 +28,20 @@ def find_files(input_dir: str, ensemble_id: str) -> Tuple[List[str], List[int]]:
     Tuple[List[str], List[int]]
         A tuple containing the list of files and the corresponding years
     """
-    file_pattern = os.path.join(input_dir, f"tas_{ensemble_id}_*.nc")
+    # Look for files with the hindcast pattern
+    file_pattern = os.path.join(input_dir, f"tas*{ensemble_id}*anomaly.nc")
     print(f"Looking for files matching: {file_pattern}")
 
     files = sorted(glob.glob(file_pattern))
     if not files:
-        print(f"No files found for ensemble {ensemble_id}")
-        return [], []
+        # Try the old pattern as fallback
+        file_pattern = os.path.join(input_dir, f"tas_{ensemble_id}_*.nc")
+        print(f"No files found. Searching instead for: {file_pattern}")
+        files = sorted(glob.glob(file_pattern))
+        
+        if not files:
+            print(f"No files found for ensemble {ensemble_id}")
+            return [], []
 
     print(f"Found {len(files)} files to process")
 
@@ -42,15 +50,55 @@ def find_files(input_dir: str, ensemble_id: str) -> Tuple[List[str], List[int]]:
     for file in files:
         basename = os.path.basename(file)
         try:
-            year = int(basename.split("_")[-1].split(".")[0])
-            years.append(year)
+            # Try to extract year from filename patterns like:
+            # tas_Amon_seSEIKaSIVERAf1977_r11i11p2f1-LR_197711-197904_anomaly.nc
+            # The year is in the component that starts with the year and month (YYYYMM)
+            date_parts = basename.split('_')
+            for part in date_parts:
+                if len(part) >= 6 and '-' in part:
+                    # This looks like a date range (e.g., 197711-197904)
+                    start_date = part.split('-')[0]
+                    if start_date.isdigit() and len(start_date) >= 6:
+                        year = int(start_date[:4])
+                        years.append(year)
+                        break
+            
+            # If we couldn't extract the year from date parts, try the old method
+            if not years or len(years) <= len(files) - 1:
+                # Extract year from seSEIKaSIVERAfYYYY part
+                for part in date_parts:
+                    if part.startswith('seSEIKaSIVERAf'):
+                        year_str = part[len('seSEIKaSIVERAf'):]
+                        if year_str.isdigit():
+                            year = int(year_str)
+                            years.append(year)
+                            break
         except ValueError:
             print(f"Warning: Could not extract year from filename: {basename}")
 
+    # Ensure we have a year for each file
+    if len(years) != len(files):
+        print(f"Warning: Could not extract years for all files. Found {len(years)} years for {len(files)} files.")
+        # Try to extract years from the filenames using a regex
+        years = []
+        import re
+        for file in files:
+            basename = os.path.basename(file)
+            # Look for patterns like YYYY in the filename
+            year_match = re.search(r'_(\d{4})(\d{2})-', basename)
+            if year_match:
+                year = int(year_match.group(1))
+                years.append(year)
+            else:
+                print(f"Warning: Could not extract year from filename: {basename}")
+
     # Sort years and files together
-    year_file_pairs = sorted(zip(years, files))
-    years = [y for y, _ in year_file_pairs]
-    files = [f for _, f in year_file_pairs]
+    if len(years) == len(files):
+        year_file_pairs = sorted(zip(years, files))
+        years = [y for y, _ in year_file_pairs]
+        files = [f for _, f in year_file_pairs]
+    else:
+        print("Warning: Mismatched number of years and files. Using files in their current order.")
 
     return files, years
 
@@ -88,57 +136,72 @@ def create_netcdf_file(
     """
     try:
         with nc.Dataset(output_file, "w") as dst:
-            # Create dimensions
-            dst.createDimension("initialization", len(years))
-            dst.createDimension("lead_time", dimensions["lead_time"])
-            dst.createDimension("lat", dimensions["lat"])
-            dst.createDimension("lon", dimensions["lon"])
+            # Create dimensions with time instead of initialization
+            dst.createDimension("time", len(years))
+            dst.createDimension("lead_time", dimensions.get("lead_time", 18))
+            dst.createDimension("lat", dimensions.get("lat"))
+            dst.createDimension("lon", dimensions.get("lon"))
 
-            # Create variables
-            init_var = dst.createVariable("initialization", np.int32, ("initialization",))
-            lead_var = dst.createVariable("lead_time", np.int32, ("lead_time",))
-            lat_var = dst.createVariable("lat", np.float64, ("lat",))
-            lon_var = dst.createVariable("lon", np.float64, ("lon",))
+            # Create time variable with proper units
+            time_var = dst.createVariable("time", "f8", ("time",))
+            # Start from January 1st of the first initialization year
+            base_year = min(years) if years else 1958
+            time_units = f"days since {base_year}-01-01 00:00:00"
+            time_var.units = time_units
+            time_var.calendar = "standard"
+            time_var.long_name = "initialization dates"
+            
+            # Convert years to dates (November 1st of each year) and then to numerics
+            dates = [datetime(year, 11, 1) for year in years]
+            time_var[:] = nc.date2num(dates, time_units, calendar="standard")
 
-            # The main variable: uses float32 to save space
-            tas_var = dst.createVariable(
-                "tas",
-                np.float32,
-                ("initialization", "lead_time", "lat", "lon"),
-                zlib=True,
-                complevel=compression_level,
-            )
+            # Create lead time coordinate (in months)
+            lead_var = dst.createVariable("lead_time", "i4", ("lead_time",))
+            lead_var.units = "months"
+            lead_var.long_name = "lead time in months"
+            lead_var[:] = np.arange(dimensions.get("lead_time", 18))
 
-            # Set coordinate values
-            init_var[:] = years
-            lead_var[:] = np.arange(dimensions["lead_time"])
+            # Create lat/lon coordinates
+            lat_var = dst.createVariable("lat", "f4", ("lat",))
+            lat_var.units = "degrees_north"
+            lat_var.long_name = "latitude"
             lat_var[:] = lat_values
+
+            lon_var = dst.createVariable("lon", "f4", ("lon",))
+            lon_var.units = "degrees_east"
+            lon_var.long_name = "longitude"
             lon_var[:] = lon_values
 
-            # Set attributes
-            init_var.units = "year"
-            init_var.long_name = "Initialization Year"
-            lead_var.units = "months"
-            lead_var.long_name = "Forecast Lead Time"
-
-            # Set standard attributes for main variable
+            # Create the tas variable
+            tas_var = dst.createVariable(
+                "tas",
+                "f4",
+                ("time", "lead_time", "lat", "lon"),
+                zlib=True,
+                complevel=compression_level,
+                fill_value=nc.default_fillvals["f4"],
+            )
             tas_var.units = "K"
-            tas_var.long_name = "Temperature Anomaly"
+            tas_var.long_name = "near-surface air temperature"
             tas_var.standard_name = "air_temperature"
 
             # Add global attributes
-            dst.title = "Combined Temperature Anomaly Data"
-            dst.created = time.ctime()
-            dst.description = "Combined file with dimensions (initialization, lead_time, lat, lon)"
+            dst.title = "Combined yearly forecasts"
+            dst.institution = "Max Planck Institute for Meteorology"
+            dst.source = "MPI-ESM"
+            dst.history = f"Created on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            dst.description = "Near-surface air temperature anomalies"
 
-        return True
+            return True
+
     except Exception as e:
         print(f"Error creating NetCDF file: {e}")
         return False
 
 
 def fill_netcdf_file(
-    output_file: str, files: List[str], years: List[int], max_lead_time: int = 18
+    output_file: str, files: List[str], years: List[int], max_lead_time: int = 18,
+    assim_dir: str = None, ensemble_id: str = None
 ) -> bool:
     """
     Fill an existing NetCDF file with data from yearly files.
@@ -153,6 +216,10 @@ def fill_netcdf_file(
         List of initialization years corresponding to the files
     max_lead_time : int, optional
         Maximum number of lead time steps to include, by default 18
+    assim_dir : str, optional
+        Directory containing assimilation member files, by default None
+    ensemble_id : str, optional
+        Ensemble member ID to match in assimilation files, by default None
 
     Returns
     -------
@@ -172,6 +239,62 @@ def fill_netcdf_file(
                 start_time = time.time()
 
                 try:
+                    # If assimilation directory is provided, get the previous 24 months
+                    if assim_dir and ensemble_id:
+                        # Extract r number from ensemble_id (e.g., r10 from r10i11p2f1)
+                        r_number = ensemble_id.split('i')[0]
+                        
+                        # Find the assimilation member file with matching r number
+                        assim_pattern = os.path.join(assim_dir, f"tas_Amon_asSEIKaSIVERAf_{r_number}i*-LR_*_anomaly.nc")
+                        assim_files = glob.glob(assim_pattern)
+                        if not assim_files:
+                            print(f"Warning: No assimilation member files found for r number {r_number} in {assim_dir}")
+                        else:
+                            # Use the first matching assimilation member file
+                            assim_file = assim_files[0]
+                            print(f"Using assimilation member: {os.path.basename(assim_file)}")
+                            
+                            with nc.Dataset(assim_file, "r") as assim_ds:
+                                # Get the time variable
+                                time_var = assim_ds.variables["time"]
+                                time_units = time_var.units
+                                
+                                # Calculate the target month (November of initialization year)
+                                target_month = 11  # November
+                                target_year = year
+                                
+                                # Find the index for the target month
+                                time_values = time_var[:]
+                                target_date = datetime(target_year, target_month, 1)
+                                target_time = nc.date2num(target_date, time_units)
+                                
+                                # Find the closest time index
+                                time_diff = np.abs(time_values - target_time)
+                                target_idx = np.argmin(time_diff)
+                                
+                                # Get the previous 24 months
+                                start_idx = target_idx - 24
+                                if start_idx >= 0:
+                                    # Determine which variable to use (tas or var167)
+                                    if "tas" in assim_ds.variables:
+                                        assim_var_name = "tas"
+                                        print(f"  Using variable 'tas' from assimilation file")
+                                    elif "var167" in assim_ds.variables:
+                                        assim_var_name = "var167"
+                                        print(f"  Using variable 'var167' from assimilation file (alias for tas)")
+                                    else:
+                                        print(f"  Warning: Neither 'tas' nor 'var167' found in assimilation file")
+                                        print(f"  Available variables: {list(assim_ds.variables.keys())}")
+                                        print(f"  Skipping assimilation data for this year")
+                                        continue
+                                        
+                                    # Copy the previous 24 months
+                                    for j in range(24):
+                                        tas_var[i, j, :, :] = assim_ds.variables[assim_var_name][start_idx + j, :, :]
+                                    print("  Successfully copied previous 24 months from assimilation member")
+                                else:
+                                    print(f"  Warning: Could not find 24 months before {target_date} in assimilation member")
+
                     with nc.Dataset(file, "r") as src:
                         # Check time dimension
                         if "time" not in src.dimensions:
@@ -181,6 +304,20 @@ def fill_netcdf_file(
                             )
                             continue
 
+                        # Determine which variable to use (tas or var167 or others)
+                        hindcast_var_name = None
+                        for var_name in ["tas", "var167", "tas_anomalies"]:
+                            if var_name in src.variables:
+                                hindcast_var_name = var_name
+                                print(f"  Using variable '{var_name}' from hindcast file")
+                                break
+                        
+                        if not hindcast_var_name:
+                            print(f"  Warning: No recognized temperature variable found in hindcast file")
+                            print(f"  Available variables: {list(src.variables.keys())}")
+                            print(f"  Skipping hindcast data for this year")
+                            continue
+
                         n_times = min(max_lead_time, len(src.dimensions["time"]))
                         if n_times < max_lead_time:
                             print(
@@ -188,11 +325,12 @@ def fill_netcdf_file(
                             )
                             print("This year will have missing data")
 
-                        # Copy data for this year
+                        # Copy data for this year, starting after the assimilation data
+                        start_idx = 24 if assim_dir else 0
                         for t in range(n_times):
                             print(f"    Lead time {t+1}/{n_times}", end="\r")
                             # Copy one time step at a time to minimize memory usage
-                            tas_var[i, t, :, :] = src.variables["tas"][t, :, :]
+                            tas_var[i, start_idx + t, :, :] = src.variables[hindcast_var_name][t, :, :]
 
                         print(
                             f"\n  Year {year} processed in {time.time() - start_time:.2f} seconds"
@@ -200,16 +338,22 @@ def fill_netcdf_file(
 
                 except Exception as e:
                     print(f"Error processing file for year {year}: {e}")
+                    # Print more detailed error information
+                    import traceback
+                    print(f"  Traceback: {traceback.format_exc()}")
 
             return True
 
     except Exception as e:
         print(f"Error filling NetCDF file: {e}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
         return False
 
 
 def create_and_fill_file(
-    input_dir: str, output_file: str, ensemble_id: str, overwrite: bool = False
+    input_dir: str, output_file: str, ensemble_id: str, overwrite: bool = False,
+    assim_dir: str = None
 ) -> bool:
     """
     Create a NetCDF file with the right dimensions and fill it incrementally.
@@ -224,6 +368,8 @@ def create_and_fill_file(
         Ensemble member ID (e.g., r10i11p2f1)
     overwrite : bool, optional
         Whether to overwrite the output file if it exists, by default False
+    assim_dir : str, optional
+        Directory containing assimilation member files, by default None
 
     Returns
     -------
@@ -256,7 +402,10 @@ def create_and_fill_file(
                 print("Error: 'time' dimension not found in input file")
                 return False
 
+            # Increase lead time steps to accommodate assimilation data
             lead_time_steps = min(18, len(src.dimensions["time"]))
+            if assim_dir:
+                lead_time_steps += 24  # Add 24 months for assimilation data
             nlat = len(src.dimensions["lat"])
             nlon = len(src.dimensions["lon"])
 
@@ -266,7 +415,7 @@ def create_and_fill_file(
 
             print(
                 f"Creating output file with dimensions: "
-                f"(initialization={len(years)}, lead_time={lead_time_steps},"
+                f"(time={len(years)}, lead_time={lead_time_steps},"
                 f" lat={nlat}, lon={nlon})"
             )
 
@@ -282,7 +431,8 @@ def create_and_fill_file(
             return False
 
         # Fill the file with data
-        success = fill_netcdf_file(output_file, files, years, max_lead_time=lead_time_steps)
+        success = fill_netcdf_file(output_file, files, years, max_lead_time=18, 
+                                 assim_dir=assim_dir, ensemble_id=ensemble_id)
         if not success:
             if os.path.exists(output_file):
                 os.remove(output_file)
@@ -296,7 +446,7 @@ def create_and_fill_file(
         with nc.Dataset(output_file, "r") as f:
             print(f"Output file dimensions: {f.dimensions.keys()}")
             print(f"Output file variables: {f.variables.keys()}")
-            print(f"Initialization values: {f.variables['initialization'][:]}")
+            print(f"Time values: {f.variables['time'][:]}")
 
         print(f"Successfully created file: {output_file}")
         return True
