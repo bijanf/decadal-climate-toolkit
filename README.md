@@ -1,7 +1,7 @@
 # DecadalClimate
 
-[![Build Status](https://github.com/username/decadal/actions/workflows/build.yml/badge.svg)](https://github.com/username/decadal/actions/workflows/build.yml)
-[![Lint Status](https://github.com/username/decadal/actions/workflows/lint.yml/badge.svg)](https://github.com/username/decadal/actions/workflows/lint.yml)
+[![Build Status](https://github.com/bijanf/decadal/actions/workflows/build.yml/badge.svg)](https://github.com/username/decadal/actions/workflows/build.yml)
+[![Lint Status](https://github.com/bijanf/decadal/actions/workflows/lint.yml/badge.svg)](https://github.com/username/decadal/actions/workflows/lint.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 A comprehensive toolkit for processing and analyzing decadal climate prediction data with a focus on NetCDF file manipulation and visualization.
