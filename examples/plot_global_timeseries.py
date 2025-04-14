@@ -16,10 +16,10 @@ from typing import Dict, List, Optional, Tuple
 import matplotlib.dates as mdates
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import xarray as xr
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
-import pandas as pd
 
 # Set up logging
 logging.basicConfig(
@@ -135,7 +135,7 @@ def compute_yearly_mean(global_avg: xr.DataArray) -> Tuple[List[datetime], List[
     if isinstance(time_values[0], np.datetime64):
         dates = [pd.to_datetime(t) for t in time_values]
     else:
-        time_units = global_avg.time.attrs.get('units', 'days since 1958-01-01')
+        time_units = global_avg.time.attrs.get("units", "days since 1958-01-01")
         dates = [datetime(1958, 1, 1) + timedelta(days=int(t)) for t in time_values]
 
     # Group by year and compute mean
@@ -188,20 +188,17 @@ def plot_timeseries(
 
     # Get initialization dates
     init_dates = pd.to_datetime(global_avg.time.values)
-    
+
     # For each initialization date, plot the forecast
     for init_date in init_dates:
         # Get the forecast for this initialization
         forecast = global_avg.sel(time=init_date)
-        
+
         # Create forecast dates (42 months from initialization)
         forecast_dates = [init_date + pd.DateOffset(months=i) for i in range(len(forecast))]
-        
+
         # Plot the forecast as a single gray line
-        ax.plot(forecast_dates, forecast.values,
-                color='gray',
-                linewidth=1.5,
-                alpha=0.5)
+        ax.plot(forecast_dates, forecast.values, color="gray", linewidth=1.5, alpha=0.5)
 
     # Format plot
     if title:
@@ -287,7 +284,7 @@ def plot_multi_ensemble(
 
     # Create a combined plot for all ensembles
     fig_combined, ax_combined = plt.subplots(figsize=(14, 8))
-    
+
     # Process each ensemble again for the combined plot
     for i, ensemble in enumerate(ensemble_ids):
         filepath = os.path.join(data_dir, file_pattern.format(ensemble))
@@ -297,13 +294,13 @@ def plot_multi_ensemble(
         try:
             ds = load_ensemble_data(filepath)
             global_avg = compute_global_average(ds, variable=variable)
-            
+
             # Get time values and convert to datetime
             time_values = global_avg.time.values
             if isinstance(time_values[0], np.datetime64):
                 dates = [pd.to_datetime(t) for t in time_values]
             else:
-                time_units = global_avg.time.attrs.get('units', 'days since 1958-01-01')
+                time_units = global_avg.time.attrs.get("units", "days since 1958-01-01")
                 dates = [datetime(1958, 1, 1) + timedelta(days=int(t)) for t in time_values]
 
             # Find all unique initialization dates (November dates)
@@ -319,16 +316,15 @@ def plot_multi_ensemble(
             for init_idx in init_indices:
                 if init_idx + 42 > len(dates):
                     continue
-                    
+
                 # Get the next 42 months of data
-                forecast_dates = dates[init_idx:init_idx+42]
-                forecast_values = global_avg.values[init_idx:init_idx+42]
-                
+                forecast_dates = dates[init_idx : init_idx + 42]
+                forecast_values = global_avg.values[init_idx : init_idx + 42]
+
                 # Plot the forecast as a single gray line
-                ax_combined.plot(forecast_dates, forecast_values,
-                               color='gray',
-                               linewidth=1.5,
-                               alpha=0.5)
+                ax_combined.plot(
+                    forecast_dates, forecast_values, color="gray", linewidth=1.5, alpha=0.5
+                )
 
         except Exception as e:
             logger.error(f"Error processing {ensemble} for combined plot: {e}")

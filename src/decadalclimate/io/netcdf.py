@@ -5,8 +5,8 @@ NetCDF I/O operations using the netCDF4 library directly for optimal memory effi
 import glob
 import os
 import time
-from typing import List, Tuple
 from datetime import datetime, timedelta
+from typing import List, Tuple
 
 import netCDF4 as nc
 import numpy as np
@@ -38,7 +38,7 @@ def find_files(input_dir: str, ensemble_id: str) -> Tuple[List[str], List[int]]:
         file_pattern = os.path.join(input_dir, f"tas_{ensemble_id}_*.nc")
         print(f"No files found. Searching instead for: {file_pattern}")
         files = sorted(glob.glob(file_pattern))
-        
+
         if not files:
             print(f"No files found for ensemble {ensemble_id}")
             return [], []
@@ -53,22 +53,22 @@ def find_files(input_dir: str, ensemble_id: str) -> Tuple[List[str], List[int]]:
             # Try to extract year from filename patterns like:
             # tas_Amon_seSEIKaSIVERAf1977_r11i11p2f1-LR_197711-197904_anomaly.nc
             # The year is in the component that starts with the year and month (YYYYMM)
-            date_parts = basename.split('_')
+            date_parts = basename.split("_")
             for part in date_parts:
-                if len(part) >= 6 and '-' in part:
+                if len(part) >= 6 and "-" in part:
                     # This looks like a date range (e.g., 197711-197904)
-                    start_date = part.split('-')[0]
+                    start_date = part.split("-")[0]
                     if start_date.isdigit() and len(start_date) >= 6:
                         year = int(start_date[:4])
                         years.append(year)
                         break
-            
+
             # If we couldn't extract the year from date parts, try the old method
             if not years or len(years) <= len(files) - 1:
                 # Extract year from seSEIKaSIVERAfYYYY part
                 for part in date_parts:
-                    if part.startswith('seSEIKaSIVERAf'):
-                        year_str = part[len('seSEIKaSIVERAf'):]
+                    if part.startswith("seSEIKaSIVERAf"):
+                        year_str = part[len("seSEIKaSIVERAf") :]
                         if year_str.isdigit():
                             year = int(year_str)
                             years.append(year)
@@ -78,14 +78,17 @@ def find_files(input_dir: str, ensemble_id: str) -> Tuple[List[str], List[int]]:
 
     # Ensure we have a year for each file
     if len(years) != len(files):
-        print(f"Warning: Could not extract years for all files. Found {len(years)} years for {len(files)} files.")
+        print(
+            f"Warning: Could not extract years for all files. Found {len(years)} years for {len(files)} files."
+        )
         # Try to extract years from the filenames using a regex
         years = []
         import re
+
         for file in files:
             basename = os.path.basename(file)
             # Look for patterns like YYYY in the filename
-            year_match = re.search(r'_(\d{4})(\d{2})-', basename)
+            year_match = re.search(r"_(\d{4})(\d{2})-", basename)
             if year_match:
                 year = int(year_match.group(1))
                 years.append(year)
@@ -147,7 +150,9 @@ def create_netcdf_file(
             lead_var = dst.createVariable("lead_time", "i4", ("lead_time",))
             lat_var = dst.createVariable("lat", "f4", ("lat",))
             lon_var = dst.createVariable("lon", "f4", ("lon",))
-            tas_var = dst.createVariable("tas", "f4", ("time", "lead_time", "lat", "lon"), zlib=True)
+            tas_var = dst.createVariable(
+                "tas", "f4", ("time", "lead_time", "lat", "lon"), zlib=True
+            )
 
             # Set variable attributes
             time_var.units = "days since 1958-01-01"
@@ -172,17 +177,17 @@ def create_netcdf_file(
                 # Calculate date 24 months before the initialization date
                 init_month = 11  # November
                 init_year = year
-                
+
                 # Go back 24 months (2 years) and use October (as specified in the requirements)
                 start_year = init_year - 2
                 start_month = 10  # Use October instead of November
-                
+
                 # Get the last day of the month
                 if start_month == 12:
                     start_date = datetime(start_year + 1, 1, 1) - timedelta(days=1)
                 else:
                     start_date = datetime(start_year, start_month + 1, 1) - timedelta(days=1)
-                
+
                 time_var[i] = nc.date2num(start_date, time_var.units)
 
             return True
@@ -190,13 +195,18 @@ def create_netcdf_file(
     except Exception as e:
         print(f"Error creating NetCDF file: {e}")
         import traceback
+
         print(f"Traceback: {traceback.format_exc()}")
         return False
 
 
 def fill_netcdf_file(
-    output_file: str, files: List[str], years: List[int], max_lead_time: int = 18,
-    assim_dir: str = None, ensemble_id: str = None
+    output_file: str,
+    files: List[str],
+    years: List[int],
+    max_lead_time: int = 18,
+    assim_dir: str = None,
+    ensemble_id: str = None,
 ) -> bool:
     """
     Fill an existing NetCDF file with data from yearly files.
@@ -237,42 +247,50 @@ def fill_netcdf_file(
                     # If assimilation directory is provided, get the previous 24 months
                     if assim_dir and ensemble_id:
                         # Extract r number from ensemble_id (e.g., r10 from r10i11p2f1)
-                        r_number = ensemble_id.split('i')[0]
-                        
+                        r_number = ensemble_id.split("i")[0]
+
                         # Find the assimilation member file with matching r number
-                        assim_pattern = os.path.join(assim_dir, f"tas_Amon_asSEIKaSIVERAf_{r_number}i*-LR_*_anomaly.nc")
+                        assim_pattern = os.path.join(
+                            assim_dir, f"tas_Amon_asSEIKaSIVERAf_{r_number}i*-LR_*_anomaly.nc"
+                        )
                         assim_files = glob.glob(assim_pattern)
                         if not assim_files:
-                            print(f"Warning: No assimilation member files found for r number {r_number} in {assim_dir}")
+                            print(
+                                f"Warning: No assimilation member files found for r number {r_number} in {assim_dir}"
+                            )
                         else:
                             # Use the first matching assimilation member file
                             assim_file = assim_files[0]
                             print(f"Using assimilation member: {os.path.basename(assim_file)}")
-                            
+
                             with nc.Dataset(assim_file, "r") as assim_ds:
                                 # Get the time variable
                                 time_var = assim_ds.variables["time"]
                                 time_units = time_var.units
-                                
+
                                 # Calculate the target month (November of initialization year)
                                 target_month = 11  # November
                                 target_year = year
-                                
+
                                 # Find the index for the target month
                                 time_values = time_var[:]
                                 # Use end of month for assimilation data
                                 target_date = datetime(target_year, target_month, 1)
                                 # Add one month and subtract one day to get end of month
                                 if target_month == 12:
-                                    target_date = datetime(target_year + 1, 1, 1) - timedelta(days=1)
+                                    target_date = datetime(target_year + 1, 1, 1) - timedelta(
+                                        days=1
+                                    )
                                 else:
-                                    target_date = datetime(target_year, target_month + 1, 1) - timedelta(days=1)
+                                    target_date = datetime(
+                                        target_year, target_month + 1, 1
+                                    ) - timedelta(days=1)
                                 target_time = nc.date2num(target_date, time_units)
-                                
+
                                 # Find the closest time index
                                 time_diff = np.abs(time_values - target_time)
                                 target_idx = np.argmin(time_diff)
-                                
+
                                 # Get the previous 24 months
                                 start_idx = target_idx - 24
                                 if start_idx >= 0:
@@ -282,19 +300,31 @@ def fill_netcdf_file(
                                         print(f"  Using variable 'tas' from assimilation file")
                                     elif "var167" in assim_ds.variables:
                                         assim_var_name = "var167"
-                                        print(f"  Using variable 'var167' from assimilation file (alias for tas)")
+                                        print(
+                                            f"  Using variable 'var167' from assimilation file (alias for tas)"
+                                        )
                                     else:
-                                        print(f"  Warning: Neither 'tas' nor 'var167' found in assimilation file")
-                                        print(f"  Available variables: {list(assim_ds.variables.keys())}")
+                                        print(
+                                            f"  Warning: Neither 'tas' nor 'var167' found in assimilation file"
+                                        )
+                                        print(
+                                            f"  Available variables: {list(assim_ds.variables.keys())}"
+                                        )
                                         print(f"  Skipping assimilation data for this year")
                                         continue
-                                        
+
                                     # Copy the previous 24 months
                                     for j in range(24):
-                                        tas_var[i, j, :, :] = assim_ds.variables[assim_var_name][start_idx + j, :, :]
-                                    print("  Successfully copied previous 24 months from assimilation member")
+                                        tas_var[i, j, :, :] = assim_ds.variables[assim_var_name][
+                                            start_idx + j, :, :
+                                        ]
+                                    print(
+                                        "  Successfully copied previous 24 months from assimilation member"
+                                    )
                                 else:
-                                    print(f"  Warning: Could not find 24 months before {target_date} in assimilation member")
+                                    print(
+                                        f"  Warning: Could not find 24 months before {target_date} in assimilation member"
+                                    )
 
                     with nc.Dataset(file, "r") as src:
                         # Check time dimension
@@ -312,9 +342,11 @@ def fill_netcdf_file(
                                 hindcast_var_name = var_name
                                 print(f"  Using variable '{var_name}' from hindcast file")
                                 break
-                        
+
                         if not hindcast_var_name:
-                            print(f"  Warning: No recognized temperature variable found in hindcast file")
+                            print(
+                                f"  Warning: No recognized temperature variable found in hindcast file"
+                            )
                             print(f"  Available variables: {list(src.variables.keys())}")
                             print(f"  Skipping hindcast data for this year")
                             continue
@@ -334,10 +366,10 @@ def fill_netcdf_file(
                             time_var = src.variables["time"]
                             time_units = time_var.units
                             time_value = time_var[t]
-                            
+
                             # Set a new consistent reference date for all data
                             new_units = "days since 1958-01-01"
-                            
+
                             # Convert the time value to a datetime object
                             try:
                                 if "day as %Y%m%d.%f" in time_units:
@@ -351,13 +383,15 @@ def fill_netcdf_file(
                                     # Handle standard netCDF time format
                                     date = nc.num2date(time_value, time_units)
                             except (ValueError, TypeError) as e:
-                                print(f"Warning: Could not parse time value {time_value} with units {time_units}")
+                                print(
+                                    f"Warning: Could not parse time value {time_value} with units {time_units}"
+                                )
                                 print(f"Using fallback date for year {year}")
                                 # Use a fallback date based on the year and lead time
                                 date = datetime(year, 11, 1)  # Start with November
                                 # Add lead time months
-                                date = date + timedelta(days=30*t)  # Approximate month length
-                            
+                                date = date + timedelta(days=30 * t)  # Approximate month length
+
                             # For hindcast data (starting from 2023-11-16)
                             if "seSEIKaSIVERAf" in file:
                                 # Calculate the number of days since 1958-01-01
@@ -368,7 +402,7 @@ def fill_netcdf_file(
                             else:
                                 # Convert to the new reference date
                                 new_time_value = nc.date2num(date, new_units)
-                            
+
                             # Ensure we're at the end of the month
                             if date.day != 1:
                                 # Calculate the next month's first day
@@ -384,8 +418,10 @@ def fill_netcdf_file(
                                     new_time_value = days_since_ref
                                 else:
                                     new_time_value = nc.date2num(date, new_units)
-                            
-                            tas_var[i, start_idx + t, :, :] = src.variables[hindcast_var_name][t, :, :]
+
+                            tas_var[i, start_idx + t, :, :] = src.variables[hindcast_var_name][
+                                t, :, :
+                            ]
 
                         print(
                             f"\n  Year {year} processed in {time.time() - start_time:.2f} seconds"
@@ -395,6 +431,7 @@ def fill_netcdf_file(
                     print(f"Error processing file for year {year}: {e}")
                     # Print more detailed error information
                     import traceback
+
                     print(f"  Traceback: {traceback.format_exc()}")
 
             return True
@@ -402,13 +439,17 @@ def fill_netcdf_file(
     except Exception as e:
         print(f"Error filling NetCDF file: {e}")
         import traceback
+
         print(f"Traceback: {traceback.format_exc()}")
         return False
 
 
 def create_and_fill_file(
-    input_dir: str, output_file: str, ensemble_id: str, overwrite: bool = False,
-    assim_dir: str = None
+    input_dir: str,
+    output_file: str,
+    ensemble_id: str,
+    overwrite: bool = False,
+    assim_dir: str = None,
 ) -> bool:
     """
     Create a NetCDF file with the right dimensions and fill it incrementally.
@@ -486,8 +527,14 @@ def create_and_fill_file(
             return False
 
         # Fill the file with data
-        success = fill_netcdf_file(output_file, files, years, max_lead_time=18, 
-                                 assim_dir=assim_dir, ensemble_id=ensemble_id)
+        success = fill_netcdf_file(
+            output_file,
+            files,
+            years,
+            max_lead_time=18,
+            assim_dir=assim_dir,
+            ensemble_id=ensemble_id,
+        )
         if not success:
             if os.path.exists(output_file):
                 os.remove(output_file)
